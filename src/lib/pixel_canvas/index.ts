@@ -1,6 +1,13 @@
+export type ProcessorFunction = (
+  x: number, 
+  y: number, 
+  width: number, 
+  height: number, 
+  oldBuffer: ArrayBuffer) => number;
+
 export const evolveImageData = (
   oldImageData: ImageData,
-  processor: (x: number, y: number, oldBuffer: ArrayBuffer) => number
+  processor: ProcessorFunction
 ) => {
   let { width, height } = oldImageData;
   let newImageData = new ImageData(width, height);
@@ -12,7 +19,7 @@ export const evolveImageData = (
   while (y-- > 0) {
     let x = width;
     while (x-- > 0) {
-      buf32[y * width + x] = processor(x, y, oldBuffer);
+      buf32[y * width + x] = processor(x, y, width, height, oldBuffer);
     }
   }
   return newImageData;

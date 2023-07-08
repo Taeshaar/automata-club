@@ -1,23 +1,21 @@
-import { onMount, onCleanup } from 'solid-js';
+import { onMount, onCleanup, createSignal } from 'solid-js';
 import type { Component } from 'solid-js';
 
-import { parseRules, Rule } from './lib/cellular_automata';
+import { parseRules, Rule, getAliveNeighbors } from './lib/cellular_automata';
 import { colorFromHex, Color } from './lib/couleur';
-import { evolveImageData } from './lib/pixel_canvas';
+import { evolveImageData, ProcessorFunction } from './lib/pixel_canvas';
 import styles from './App.module.css';
 
 // Configurations
-const ZOOM = 4;
+const ZOOM = 2;
 const HOLDER_ID = '#automata';
 const RULES = '23/3';
-
-let rules = parseRules(RULES);
 
 // Il faudra découper ça un peu mieux quand je ferais les fichiers
 const sparseRainbow = ((
   treshold: number,
   colors: Array<Color>
-): ((x: number, y: number) => Color) => {
+): ProcessorFunction => {
   return (x, y) => {
     if (Math.random() > treshold) {
       return 0x0;
@@ -31,20 +29,43 @@ const sparseRainbow = ((
   colorFromHex('0000ff'),
   colorFromHex('ff00ff'),
   colorFromHex('00ffff'),
+  colorFromHex('ffff00'),
   colorFromHex('ffffff'),
 ]);
 
+const applyRule = ((rulesString: string): ProcessorFunction => {
+  let rules = parseRules(rulesString);
+  return (x, y, width, height, oldBuffer) => {
+    let buf32 = new Uint32Array(oldBuffer);
+    let index = y * width + x
+    let aliveNeighbors = getAliveNeighbors(x, y, width, height, oldBuffer);
+    let aliveNeighborsCount = aliveNeighbors.length;
+
+    let currentCellValue = buf32[index];
+    let currentCellIsAlive = (currentCellValue >> 24 & 0xFF) === 255;
+
+    // Mes rules étant un bit, je pourrais faire ça BIEN plus vite avec un `a & b > 0`
+    if (currentCellIsAlive && rules.surviveRule.indexOf(aliveNeighborsCount) !== -1) {
+      return currentCellValue;
+    } else if (!currentCellIsAlive && rules.birthRule.indexOf(aliveNeighborsCount) !== -1) {
+      // Je pourrais mix les couleurs
+      return aliveNeighbors[0];
+    }
+    return 0x0;
+  };
+})(RULES);
+
 const App: Component = () => {
   let canvas: HTMLCanvasElement;
-  let width: number;
-  let height: number;
+  const [ width, setWidth ] =  createSignal(window.innerWidth/ZOOM);
+  const [ height, setHeight ] =  createSignal(window.innerHeight/ZOOM);
+  let count = 0;
 
   const resizeCanvas = () => {
-    width = window.innerWidth;
-    height = window.innerHeight;
+    setWidth(window.innerWidth/ZOOM);
+    setHeight(window.innerHeight/ZOOM);
   };
   window.addEventListener('resize', resizeCanvas);
-  resizeCanvas();
 
   onMount(() => {
     const ctx = canvas.getContext('2d');
@@ -56,14 +77,25 @@ const App: Component = () => {
     let imageData = ctx.getImageData(
       0,
       0,
-      Math.floor(width),
-      Math.floor(height)
+      Math.floor(width()),
+      Math.floor(height())
     );
+    imageData = evolveImageData(imageData, sparseRainbow);
+
 
     let animationFrameId: number;
     const loop = (t: number) => {
       animationFrameId = requestAnimationFrame(loop);
-      imageData = evolveImageData(imageData, sparseRainbow);
+
+      /*count += 1;
+      if (count >= 10) {
+
+        count -= 10;
+      } else {
+        return;
+      }*/
+  
+      imageData = evolveImageData(imageData, applyRule);
       ctx.putImageData(imageData, 0, 0);
     };
     requestAnimationFrame(loop);
@@ -76,7 +108,7 @@ const App: Component = () => {
 
   return (
     <>
-      <canvas ref={canvas!} width={width!} height={height!} />
+      <canvas ref={canvas!} width={width()} height={height()} />
     </>
   );
 };
